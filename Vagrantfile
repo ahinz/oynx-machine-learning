@@ -17,6 +17,9 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
     config.vm.define name do |onyx|
       onyx.vm.box = "precise64"
       onyx.vm.network "private_network", ip: ip
+      onyx.vm.provider "virtualbox" do |v|
+        v.memory = 768
+      end
     end
   end
 

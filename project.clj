@@ -7,6 +7,7 @@
                  [org.clojure/data.json "0.2.5"]
                  [com.mdrogalis/onyx "0.5.2"]
                  [com.mdrogalis/onyx-core-async "0.5.0"]
+                 [com.mdrogalis/onyx-kafka "0.5.0"]
                  [compojure "1.1.8"]
                  [http-kit "2.1.16"]]
 

@@ -4,10 +4,10 @@
             [onyx.plugin.core-async]
             [onyx.api]
             [compojure.core :refer :all]
+            [compojure.handler]
+            [onyx.plugin.kafka]
             [org.httpkit.server :refer [run-server]])
   (:gen-class))
-
-(def vm-hornetq? false)
 
 ;;;;; Implementation functions ;;;;;
 (defn split-by-spaces-impl [s]
@@ -61,31 +61,22 @@
 
 (def input-chan (chan capacity))
 
-(def loud-output-chan (chan capacity))
-
-(def question-output-chan (chan capacity))
-
-;;; Inject the channels needed by the core.async plugin for each
-;;; input and output.
-(defmethod l-ext/inject-lifecycle-resources :input
-  [_ _] {:core-async/in-chan input-chan})
-
-(defmethod l-ext/inject-lifecycle-resources :loud-output
-  [_ _] {:core-async/out-chan loud-output-chan})
-
-(defmethod l-ext/inject-lifecycle-resources :question-output
-  [_ _] {:core-async/out-chan question-output-chan})
 
 (def batch-size 10)
+(def topic-name "input-topic")
 
 (def catalog
   [{:onyx/name :in
-    :onyx/ident :core.async/read-from-chan
+    :onyx/ident :kafka/read-messages
     :onyx/type :input
-    :onyx/medium :core.async
+    :onyx/medium :kafka
     :onyx/consumption :sequential
+    :kafka/topic topic-name
+    :kafka/zookeeper "127.0.0.1:2181"
+    :kafka/group-id "onyx-consumer"
+    :kafka/offset-reset "smallest"
     :onyx/batch-size batch-size
-    :onyx/doc "Reads segments from a core.async channel"}
+    :onyx/doc "Reads messages from a Kafka topic"}
 
    {:onyx/name :split-by-spaces
     :onyx/fn :onyx-starter.core/split-by-spaces
@@ -112,20 +103,28 @@
     :onyx/batch-size batch-size}
 
    {:onyx/name :loud-output
-    :onyx/ident :core.async/write-to-chan
+    :onyx/ident :kafka/write-messages
     :onyx/type :output
-    :onyx/medium :core.async
-    :onyx/consumption :sequential
+    :onyx/medium :kafka
+    :onyx/consumption :concurrent
+    :kafka/topic "loud-output"
+    :kafka/brokers "127.0.0.1:9092"
+    :kafka/serializer-class "kafka.serializer.DefaultEncoder"
+    :kafka/partitioner-class "kafka.producer.DefaultPartitioner"
     :onyx/batch-size batch-size
-    :onyx/doc "Writes segments to a core.async channel"}
+    :onyx/doc "Reads messages from a Kafka topic"}
 
    {:onyx/name :question-output
-    :onyx/ident :core.async/write-to-chan
+    :onyx/ident :kafka/write-messages
     :onyx/type :output
-    :onyx/medium :core.async
-    :onyx/consumption :sequential
+    :onyx/medium :kafka
+    :onyx/consumption :concurrent
+    :kafka/topic "question-output"
+    :kafka/brokers "127.0.0.1:9092"
+    :kafka/serializer-class "kafka.serializer.DefaultEncoder"
+    :kafka/partitioner-class "kafka.producer.DefaultPartitioner"
     :onyx/batch-size batch-size
-    :onyx/doc "Writes segments to a core.async channel"}])
+    :onyx/doc "Reads messages from a Kafka topic"}])
 
 (def id (java.util.UUID/randomUUID))
 
@@ -153,6 +152,12 @@
           :onyx/id id
           :onyx.peer/job-scheduler scheduler}
          peer-hornetq-config))
+
+(def kafka-config
+  {"zookeeper.connect" "localhost:2182"
+   "group.id" "clj-kafka.consumer"
+   "auto.offset.reset" "smallest"
+   "auto.commit.enable" "false"})
 
 ;; (def loud-results (onyx.plugin.core-async/take-segments! loud-output-chan))
 ;; (def question-results (onyx.plugin.core-async/take-segments! question-output-chan))
@@ -182,20 +187,16 @@
           (doseq [v-peer v-peers]
             (onyx.api/shutdown-peer v-peer))
           (onyx.api/shutdown-env env)))
-   (GET "/add-word" {params :params}
+   (GET "/add-word" {{words :words} :params}
         (do
-          (>!! input-chan {:sentence (get params "word")})
+          (println "Words: " words)
+          (>!! input-chan {:sentence words})
           "Added"))))
 
 (defn -main [& args]
-  (println "A")
   (let [env (onyx.api/start-env env-config)
-        zz (println "B")
-        v-peers (onyx.api/start-peers! 1 peer-config)
-        zz (println "B")]
-    (println "C")
+        v-peers (onyx.api/start-peers! 3 peer-config)]
     (onyx.api/submit-job peer-config
                          {:catalog catalog :workflow workflow
                           :task-scheduler :onyx.task-scheduler/round-robin})
-    (println "D")
-    (run-server (app v-peers env) {:port 5912})))
+    (run-server (-> (app v-peers env) compojure.handler/api) {:port 5912})))
