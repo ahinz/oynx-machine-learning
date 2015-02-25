@@ -2,9 +2,12 @@
   (:require [clojure.core.async :refer [chan >!! <!! close!]]
             [onyx.peer.task-lifecycle-extensions :as l-ext]
             [onyx.plugin.core-async]
-            [onyx.api]))
+            [onyx.api]
+            [compojure.core :refer :all]
+            [org.httpkit.server :refer [run-server]])
+  (:gen-class))
 
-(def vm-hornetq? true)
+(def vm-hornetq? false)
 
 ;;;;; Implementation functions ;;;;;
 (defn split-by-spaces-impl [s]
@@ -124,76 +127,75 @@
     :onyx/batch-size batch-size
     :onyx/doc "Writes segments to a core.async channel"}])
 
-;;; Input data to pipe into the input channel, plus the
-;;; sentinel to signal the end of input.
-(def input-segments
-  [{:sentence "Hey there user"}
-   {:sentence "It's really nice outside"}
-   {:sentence "I live in Redmond"}
-   :done])
-
-;;; Put the data onto the input chan
-(doseq [segment input-segments]
-  (>!! input-chan segment))
-
-(close! input-chan)
-
 (def id (java.util.UUID/randomUUID))
 
 ;; Use the Round Robin job scheduler
 (def scheduler :onyx.job-scheduler/round-robin)
 
-(def env-hornetq-config 
-  (if vm-hornetq? 
-    {:hornetq/mode :vm
-     :hornetq.server/type :vm
-     :hornetq/server? true}
-    {:hornetq/mode :standalone
-     :hornetq.standalone/host "127.0.0.1"
-     :hornetq.standalone/port 5445}))
+(def env-hornetq-config
+  {:hornetq/mode :standalone
+   :hornetq.standalone/host "127.0.0.1"
+   :hornetq.standalone/port 5445})
 
 (def peer-hornetq-config
-  (if vm-hornetq?
-    {:hornetq/mode :vm}
-    {:hornetq/mode :standalone
-     :hornetq.standalone/host "127.0.0.1"
-     :hornetq.standalone/port 5445}))
+  {:hornetq/mode :standalone
+   :hornetq.standalone/host "127.0.0.1"
+   :hornetq.standalone/port 5445})
 
 (def env-config
-  (merge {:zookeeper/address "127.0.0.1:2186"
-          :zookeeper/server? true
-          :zookeeper.server/port 2186
+  (merge {:zookeeper/address "127.0.0.1:2181"
           :onyx/id id
           :onyx.peer/job-scheduler scheduler}
          env-hornetq-config))
 
 (def peer-config
-  (merge {:zookeeper/address "127.0.0.1:2186"
+  (merge {:zookeeper/address "127.0.0.1:2181"
           :onyx/id id
           :onyx.peer/job-scheduler scheduler}
          peer-hornetq-config))
 
-;; Start an in-memory ZooKeeper and HornetQ (depending on vm-hornetq?)
-(def env (onyx.api/start-env env-config))
+;; (def loud-results (onyx.plugin.core-async/take-segments! loud-output-chan))
+;; (def question-results (onyx.plugin.core-async/take-segments! question-output-chan))
 
-;; Start the worker peers.
-(def v-peers (onyx.api/start-peers! 1 peer-config))
+;; (clojure.pprint/pprint loud-results)
+;; (clojure.pprint/pprint question-results)
 
-(onyx.api/submit-job peer-config
-                     {:catalog catalog :workflow workflow
-                      :task-scheduler :onyx.task-scheduler/round-robin})
+;; ;;; Input data to pipe into the input channel, plus the
+;; ;;; sentinel to signal the end of input.
+;; (def input-segments
+;;   [{:sentence "Hey there user"}
+;;    {:sentence "It's really nice outside"}
+;;    {:sentence "I live in Redmond"}
+;;    :done])
 
-(def loud-results (onyx.plugin.core-async/take-segments! loud-output-chan))
+;; ;;; Put the data onto the input chan
+;; (doseq [segment input-segments]
+;;   (>!! input-chan segment))
 
-(def question-results (onyx.plugin.core-async/take-segments! question-output-chan))
+;; (close! input-chan)
 
-(clojure.pprint/pprint loud-results)
+(defn app [v-peers env]
+  (routes
+   (GET "/shutdown" []
+        (do
+          (>!! input-chan :done)
+          (doseq [v-peer v-peers]
+            (onyx.api/shutdown-peer v-peer))
+          (onyx.api/shutdown-env env)))
+   (GET "/add-word" {params :params}
+        (do
+          (>!! input-chan {:sentence (get params "word")})
+          "Added"))))
 
-(println)
-
-(clojure.pprint/pprint question-results)
-
-(doseq [v-peer v-peers]
-  (onyx.api/shutdown-peer v-peer))
-
-(onyx.api/shutdown-env env)
+(defn -main [& args]
+  (println "A")
+  (let [env (onyx.api/start-env env-config)
+        zz (println "B")
+        v-peers (onyx.api/start-peers! 1 peer-config)
+        zz (println "B")]
+    (println "C")
+    (onyx.api/submit-job peer-config
+                         {:catalog catalog :workflow workflow
+                          :task-scheduler :onyx.task-scheduler/round-robin})
+    (println "D")
+    (run-server (app v-peers env) {:port 5912})))
