@@ -1,0 +1,117 @@
+<configuration xmlns="urn:hornetq"
+               xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+               xsi:schemaLocation="urn:hornetq /schema/hornetq-configuration.xsd">
+   <paging-directory>${data.dir:../data}/paging</paging-directory>
+
+   <bindings-directory>${data.dir:../data}/bindings</bindings-directory>
+
+   <journal-directory>${data.dir:../data}/journal</journal-directory>
+
+   <journal-min-files>10</journal-min-files>
+
+   <large-messages-directory>${data.dir:../data}/large-messages</large-messages-directory>
+
+   <connectors>
+     <connector name="netty">
+         <factory-class>org.hornetq.core.remoting.impl.netty.NettyConnectorFactory</factory-class>
+         <param key="host"  value="${hornetq.remoting.netty.host:localhost}"/>
+         <param key="port"  value="${hornetq.remoting.netty.port:5445}"/>
+     </connector>
+
+     <connector name="node1">
+         <factory-class>org.hornetq.core.remoting.impl.netty.NettyConnectorFactory</factory-class>
+         <param key="host"  value="10.199.0.101"/>
+         <param key="port"  value="${hornetq.remoting.netty.port:5445}"/>
+     </connector>
+
+     <connector name="node2">
+         <factory-class>org.hornetq.core.remoting.impl.netty.NettyConnectorFactory</factory-class>
+         <param key="host"  value="10.199.0.102"/>
+         <param key="port"  value="${hornetq.remoting.netty.port:5445}"/>
+     </connector>
+
+     <connector name="node3">
+       <factory-class>org.hornetq.core.remoting.impl.netty.NettyConnectorFactory</factory-class>
+       <param key="host"  value="10.199.0.103"/>
+       <param key="port"  value="${hornetq.remoting.netty.port:5445}"/>
+     </connector>
+
+
+      <connector name="netty-throughput">
+         <factory-class>org.hornetq.core.remoting.impl.netty.NettyConnectorFactory</factory-class>
+         <param key="host"  value="${hornetq.remoting.netty.host:localhost}"/>
+         <param key="port"  value="${hornetq.remoting.netty.batch.port:5455}"/>
+         <param key="batch-delay" value="50"/>
+      </connector>
+   </connectors>
+
+   <acceptors>
+      <acceptor name="netty">
+         <factory-class>org.hornetq.core.remoting.impl.netty.NettyAcceptorFactory</factory-class>
+         <param key="host"  value="${hornetq.remoting.netty.host:localhost}"/>
+         <param key="port"  value="${hornetq.remoting.netty.port:5445}"/>
+      </acceptor>
+
+      <acceptor name="netty-throughput">
+         <factory-class>org.hornetq.core.remoting.impl.netty.NettyAcceptorFactory</factory-class>
+         <param key="host"  value="${hornetq.remoting.netty.host:localhost}"/>
+         <param key="port"  value="${hornetq.remoting.netty.batch.port:5455}"/>
+         <param key="batch-delay" value="50"/>
+         <param key="direct-deliver" value="false"/>
+      </acceptor>
+   </acceptors>
+
+   <broadcast-groups>
+      <broadcast-group name="bg-group1">
+         <group-address>231.7.7.7</group-address>
+         <group-port>9876</group-port>
+         <broadcast-period>5000</broadcast-period>
+         <connector-ref>netty</connector-ref>
+      </broadcast-group>
+   </broadcast-groups>
+
+   <discovery-groups>
+      <discovery-group name="dg-group1">
+         <group-address>231.7.7.7</group-address>
+         <group-port>9876</group-port>
+         <refresh-timeout>10000</refresh-timeout>
+      </discovery-group>
+   </discovery-groups>
+
+   <cluster-connections>
+     <cluster-connection name="my-cluster">
+       <address>jms</address>
+       <connector-ref>netty</connector-ref>
+       <retry-interval>500</retry-interval>
+       <use-duplicate-detection>true</use-duplicate-detection>
+       <forward-when-no-consumers>true</forward-when-no-consumers>
+       <max-hops>1</max-hops>
+       <static-connectors>
+         <connector-ref>note1</connector-ref>
+         <connector-ref>note2</connector-ref>
+         <connector-ref>note3</connector-ref>
+       </static-connectors>
+     </cluster-connection>
+   </cluster-connections>
+
+   <security-settings>
+      <security-setting match="#">
+         <permission type="createNonDurableQueue" roles="guest"/>
+         <permission type="deleteNonDurableQueue" roles="guest"/>
+         <permission type="consume" roles="guest"/>
+         <permission type="send" roles="guest"/>
+      </security-setting>
+   </security-settings>
+
+   <address-settings>
+      <!--default for catch all-->
+      <address-setting match="#">
+         <dead-letter-address>jms.queue.DLQ</dead-letter-address>
+         <expiry-address>jms.queue.ExpiryQueue</expiry-address>
+         <redelivery-delay>0</redelivery-delay>
+         <max-size-bytes>10485760</max-size-bytes>
+         <message-counter-history-day-limit>10</message-counter-history-day-limit>
+         <address-full-policy>BLOCK</address-full-policy>
+      </address-setting>
+   </address-settings>
+</configuration>
